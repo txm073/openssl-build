@@ -1,6 +1,8 @@
 #!/usr/bin/env python3
 import os
+import re
 import subprocess as sp
+from pathlib import Path
 import argparse
 import sys
 
@@ -30,40 +32,60 @@ def build(target):
   if target in android_targets:
     env['ANDROID_NDK'] = '/opt/android-ndk'
     bin_dir = env['ANDROID_NDK'] + '/toolchains/llvm/prebuilt/linux-x86_64/bin'
-    api_level = '34'
     env['PATH'] = bin_dir + ':' + os.getenv('PATH')
     target_prefixes = (
       'armv7a-linux-androideabi', 'aarch64-linux-android',
       'x86_64-linux-android', 'i686-linux-android'
     )
-    cc_prefix = target_prefixes[android_targets.index(target)]
-    # env['CC'] = f'{bin_dir}/{cc_prefix}{api_level}-clang'
-    # env['CXX'] = env['CC'] + '++'
-    # opts.append(f'-D__ANDROID_API__={api_level}')
   procs = str(os.cpu_count() or 1)
-  try:
+  win = target in windows_targets
+  if win:
+    sp.run(['nmake', 'clean'], cwd='source', env=env)
+    sp.run(
+      [
+        'perl', 'Configure', target,
+        *opts, f'--prefix={prefix}',
+        '--release'
+      ],
+      cwd='source', env=env
+    )
+    makefile = Path("source/Makefile")
+    text = makefile.read_text()
+    text = text.replace('/Zi', '')
+    text = re.sub(r'\s+/Z[7iI]', '', text)       # /Zi /Z7 /ZI
+    text = re.sub(r'\s+/Fd[^\s]+', '', text)     # /Fdwhatever
+    text = re.sub(
+        r'^[ \t]*@if "\$\(SHLIBS\)"=="" \\\\
+    [ \t]*"\$\(PERL\)" "\$\(SRCDIR\)\\\\util\\\\copy\.pl" [^\r\n]*\.pdb "\$\(libdir\)"\s*
+    ',
+        '',
+        text,
+        flags=re.MULTILINE,
+    )
+    makefile.write_text(text)
+    sp.run(['nmake'], cwd='source', env=env)
+    sp.run(['nmake', 'install'], cwd='source', env=env)
+  else:
     sp.run(['make', 'clean'], cwd='source')
-  except Exception:
-    pass
-  sp.run(
-    [
-      './Configure', target,
-      *opts, f'--prefix={prefix}'
-    ],
-    cwd='source', env=env
-  )
-  sp.run(
-    ['make', '-j', procs],
-    cwd='source', env=env, shell=True
-  )
-  sp.run(
-    ['make', 'install_sw'],
-    cwd='source', env=env
-  )
+    sp.run(
+      [
+        './Configure', target,
+        *opts, f'--prefix={prefix}'
+      ],
+      cwd='source', env=env
+    )
+    sp.run(
+      ['make', '-j', procs],
+      cwd='source', env=env, shell=True
+    )
+    sp.run(
+      ['make', 'install_sw'],
+      cwd='source', env=env
+    )
 
 version = '3.6'
-if not os.path.exists('source'):
-  sp.run(['git', 'clone', 'https://github.com/openssl/openssl', 'source'])
+# if not os.path.exists('source'):
+#   sp.run(['git', 'clone', 'https://github.com/openssl/openssl', 'source'])
 sp.run(['git', 'checkout', f'openssl-{version}'], cwd='source')
 
 android_targets = (
