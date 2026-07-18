@@ -17,15 +17,9 @@ def build(target):
     'no-engine',
     'no-dso',
     'no-ui-console',
-    'no-legacy',
-    'no-deprecated',
     'no-ssl3',
     'no-tls1',
-    'no-tls1_1',
-    'no-comp',
-    'no-async',
-    'no-filenames',
-    'no-stdio'
+    'no-tls1_1'
   ]
   prefix = os.path.abspath(f'build/{target}')
   env = os.environ.copy()
@@ -54,15 +48,14 @@ def build(target):
     text = text.replace('/Zi', '')
     text = re.sub(r'\s+/Z[7iI]', '', text)       # /Zi /Z7 /ZI
     text = re.sub(r'\s+/Fd[^\s]+', '', text)     # /Fdwhatever
-    text = re.sub(
-        r'^[ \t]*@if "\$\(SHLIBS\)"=="" \\\\
-    [ \t]*"\$\(PERL\)" "\$\(SRCDIR\)\\\\util\\\\copy\.pl" [^\r\n]*\.pdb "\$\(libdir\)"\s*
-    ',
-        '',
-        text,
-        flags=re.MULTILINE,
-    )
-    makefile.write_text(text)
+    lines = text.split('\n')
+    filtered = ''
+    for i in range(len(lines)):
+      if '@if "$(SHLIBS)"=="" \\' in lines[i]:
+        i += 2
+      if not ('copy.pl' in lines[i] and '.pdb' in lines[i]):
+        filtered += lines[i] + '\n'
+    makefile.write_text(filtered)
     sp.run(['nmake'], cwd='source', env=env)
     sp.run(['nmake', 'install'], cwd='source', env=env)
   else:
